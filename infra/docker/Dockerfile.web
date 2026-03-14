@@ -1,0 +1,46 @@
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+# Copy root config
+COPY package.json package-lock.json* turbo.json tsconfig.base.json ./
+
+# Copy package manifests
+COPY packages/shared/package.json ./packages/shared/
+COPY apps/web/package.json ./apps/web/
+
+# Install dependencies
+RUN npm install
+
+# Copy source code
+COPY packages/shared/ ./packages/shared/
+COPY apps/web/ ./apps/web/
+
+# Build dependencies
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build --workspace=@codepad/shared && \
+    npm run build --workspace=@codepad/web
+
+# ─── Runner Stage ──────────────────────────────────────────
+FROM node:20-alpine AS runner
+WORKDIR /app
+
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
+
+# Set environment
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Copy built app
+COPY --from=builder /app/apps/web/public ./apps/web/public
+COPY --from=builder /app/apps/web/.next ./apps/web/.next
+COPY --from=builder /app/apps/web/package.json ./apps/web/package.json
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
+COPY --from=builder /app/packages/shared/package.json ./packages/shared/
+
+USER nextjs
+EXPOSE 3000
+
+WORKDIR /app/apps/web
+CMD ["npm", "start"]

@@ -1,0 +1,72 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: codepad-ingress
+  namespace: codepad
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/certificate-arn: ${ACM_CERT_ARN}
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/wafv2-acl-arn: ${WAF_ACL_ARN}
+spec:
+  rules:
+    - host: app.codepad.io
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: codepad-api
+                port:
+                  number: 8080
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: codepad-collaboration
+                port:
+                  number: 8082
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: codepad-web
+                port:
+                  number: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: codepad-network-policy
+  namespace: codepad
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: codepad
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: codepad
+    - to: # Allow DNS
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+    - to: # Allow external HTTPS
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - port: 443
+          protocol: TCP

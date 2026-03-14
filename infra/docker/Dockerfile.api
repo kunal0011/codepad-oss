@@ -1,0 +1,51 @@
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+# Copy root config
+COPY package.json package-lock.json* turbo.json tsconfig.base.json ./
+
+# Copy package manifests
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/database/package.json ./packages/database/
+COPY apps/api/package.json ./apps/api/
+
+# Install dependencies
+RUN npm install
+
+# Copy source code
+COPY packages/shared/ ./packages/shared/
+COPY packages/database/ ./packages/database/
+COPY apps/api/ ./apps/api/
+
+# Build dependencies
+RUN npm run build --workspace=@codepad/shared && \
+    npm run build --workspace=@codepad/database && \
+    npm run build --workspace=@codepad/api
+
+# ─── Runner Stage ──────────────────────────────────────────
+FROM node:20-alpine AS runner
+WORKDIR /app
+
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 codepad
+
+# Install production dependencies
+COPY package.json package-lock.json* ./
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/database/package.json ./packages/database/
+COPY apps/api/package.json ./apps/api/
+RUN npm install --omit=dev --workspace=@codepad/api
+
+# Copy built files
+COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
+COPY --from=builder /app/packages/database/dist ./packages/database/dist
+# Copy the migrations (Drizzle expects them where the 'migrationsFolder' points)
+COPY --from=builder /app/packages/database/src/migrations ./packages/database/src/migrations
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
+
+USER codepad
+EXPOSE 8080
+ENV NODE_ENV=production
+
+# Run migrations and then start the API
+CMD ["sh", "-c", "node packages/database/dist/migrations/run.js && node apps/api/dist/index.js"]

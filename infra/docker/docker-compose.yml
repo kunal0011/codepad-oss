@@ -1,0 +1,116 @@
+name: codepad
+
+services:
+  # ─── Databases ─────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: codepad-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: codepad
+      POSTGRES_PASSWORD: codepad
+      POSTGRES_DB: codepad
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U codepad"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: codepad-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─── Application Services ─────────────────────────────────
+  api:
+    image: codepad/api:latest
+    build:
+      context: ../../
+      dockerfile: infra/docker/Dockerfile.api
+    container_name: codepad-api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      NODE_ENV: production
+      API_PORT: "8080"
+      DATABASE_URL: postgresql://codepad:codepad@postgres:5432/codepad
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: local-dev-secret-change-in-production-32chars
+      EXECUTION_ENGINE_URL: http://execution-engine:8081
+      COLLABORATION_WS_PORT: "8082"
+      FRONTEND_URL: http://localhost:3000
+      CORS_ORIGINS: http://localhost:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  collaboration:
+    image: codepad/collaboration:latest
+    build:
+      context: ../../
+      dockerfile: infra/docker/Dockerfile.collaboration
+    container_name: codepad-collaboration
+    restart: unless-stopped
+    ports:
+      - "8082:8082"
+    environment:
+      NODE_ENV: production
+      COLLABORATION_WS_PORT: "8082"
+      JWT_SECRET: local-dev-secret-change-in-production-32chars
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  execution-engine:
+    image: codepad/execution-engine:latest
+    build:
+      context: ../../apps/execution-engine
+      dockerfile: ../../infra/docker/Dockerfile.execution
+    container_name: codepad-execution
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      EXEC_PORT: "8081"
+      MAX_CONTAINER_MEMORY_MB: "512"
+      MAX_CONTAINER_CPU_CORES: "1"
+      CONTAINER_POOL_SIZE: "5"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    privileged: true
+
+  web:
+    image: codepad/web:latest
+    build:
+      context: ../../
+      dockerfile: infra/docker/Dockerfile.web
+    container_name: codepad-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+      NEXT_PUBLIC_WS_URL: ws://localhost:8082
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  redis_data:

@@ -1,0 +1,25 @@
+{
+  "name": "@codepad/database",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "db:migrate": "node dist/migrations/run.js",
+    "db:seed": "node dist/seeds/run.js",
+    "db:generate": "drizzle-kit generate",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "@codepad/shared": "*",
+    "drizzle-orm": "^0.45.1",
+    "postgres": "^3.4.0"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.30.0",
+    "typescript": "^5.6.0"
+  }
+}

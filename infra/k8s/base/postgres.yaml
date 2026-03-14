@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: codepad-postgres
+  namespace: codepad
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: codepad-postgres
+  template:
+    metadata:
+      labels:
+        app: codepad-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          env:
+            - name: POSTGRES_USER
+              value: codepad
+            - name: POSTGRES_PASSWORD
+              value: codepad
+            - name: POSTGRES_DB
+              value: codepad
+          ports:
+            - containerPort: 5432
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: codepad
+spec:
+  ports:
+    - port: 5432
+  selector:
+    app: codepad-postgres

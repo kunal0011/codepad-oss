@@ -1,0 +1,16 @@
+FROM golang:1.25-alpine AS builder
+WORKDIR /app
+COPY go.mod go.sum* ./
+RUN go mod download 2>/dev/null || true
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/execution-engine ./cmd/server
+
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates docker-cli
+RUN adduser -D -u 1001 codepad
+COPY --from=builder /bin/execution-engine /bin/execution-engine
+
+EXPOSE 8081
+ENV GIN_MODE=release
+
+CMD ["/bin/execution-engine"]

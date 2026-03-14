@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: codepad-web
+  namespace: codepad
+  labels:
+    app: codepad-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: codepad-web
+  template:
+    metadata:
+      labels:
+        app: codepad-web
+    spec:
+      serviceAccountName: codepad-web
+      containers:
+        - name: web
+          image: codepad/web:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: "http://localhost:8080"
+            - name: NEXT_PUBLIC_WS_URL
+              value: "ws://localhost:8082"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "500m"
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: codepad-web
+  namespace: codepad
+spec:
+  type: ClusterIP
+  selector:
+    app: codepad-web
+  ports:
+    - port: 3000
+      targetPort: 3000
+      protocol: TCP

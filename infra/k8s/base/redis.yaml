@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: codepad-redis
+  namespace: codepad
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: codepad-redis
+  template:
+    metadata:
+      labels:
+        app: codepad-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: codepad
+spec:
+  ports:
+    - port: 6379
+  selector:
+    app: codepad-redis

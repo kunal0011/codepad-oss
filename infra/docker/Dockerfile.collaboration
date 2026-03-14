@@ -1,0 +1,39 @@
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+# Copy root config and workspace definitions
+COPY package.json package-lock.json* turbo.json tsconfig.base.json ./
+
+# Copy package manifests
+COPY packages/shared/package.json ./packages/shared/
+COPY apps/collaboration/package.json ./apps/collaboration/
+
+# Install dependencies (using workspaces)
+RUN npm install
+
+# Copy source code
+COPY packages/shared/ ./packages/shared/
+COPY apps/collaboration/ ./apps/collaboration/
+
+# Build shared first, then collaboration
+RUN npm run build --workspace=@codepad/shared && \
+    npm run build --workspace=@codepad/collaboration
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 codepad
+
+# Copy necessary files from builder
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
+COPY --from=builder /app/packages/shared/package.json ./packages/shared/
+COPY --from=builder /app/apps/collaboration/dist ./apps/collaboration/dist
+COPY --from=builder /app/apps/collaboration/package.json ./apps/collaboration/
+
+USER codepad
+EXPOSE 8082
+ENV NODE_ENV=production
+
+CMD ["node", "apps/collaboration/dist/index.js"]

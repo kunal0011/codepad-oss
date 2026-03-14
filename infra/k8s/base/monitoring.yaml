@@ -1,0 +1,151 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: codepad
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    scrape_configs:
+      - job_name: 'codepad-api'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: ['codepad']
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            regex: codepad-api
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_ip]
+            target_label: __address__
+            replacement: $1:8080
+
+      - job_name: 'codepad-execution'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: ['codepad']
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            regex: codepad-execution
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_ip]
+            target_label: __address__
+            replacement: $1:8081
+
+      - job_name: 'codepad-collaboration'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: ['codepad']
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            regex: codepad-collaboration
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_ip]
+            target_label: __address__
+            replacement: $1:8082
+
+    rule_files:
+      - /etc/prometheus/alerts.yml
+
+  alerts.yml: |
+    groups:
+      - name: codepad-alerts
+        rules:
+          - alert: HighErrorRate
+            expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.005
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "High error rate detected ({{ $value | humanizePercentage }})"
+              description: "Error rate > 0.5% for more than 2 minutes"
+
+          - alert: HighP99Latency
+            expr: histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m])) > 0.5
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "P99 latency > 500ms ({{ $value }}s)"
+
+          - alert: PodRestarting
+            expr: increase(kube_pod_container_status_restarts_total{namespace="codepad"}[5m]) > 3
+            for: 1m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Pod {{ $labels.pod }} restarting frequently"
+
+          - alert: ExecutionQueueBacklog
+            expr: codepad_execution_queue_size > 50
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Execution queue has {{ $value }} pending items"
+
+          - alert: HighMemoryUsage
+            expr: container_memory_usage_bytes{namespace="codepad"} / container_spec_memory_limit_bytes > 0.9
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Container {{ $labels.container }} memory > 90%"
+
+          - alert: WebSocketConnectionsSaturated
+            expr: codepad_ws_active_connections > 4500
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "WebSocket connections near limit ({{ $value }}/5000)"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: codepad
+data:
+  codepad-overview.json: |
+    {
+      "dashboard": {
+        "title": "CodePad Overview",
+        "panels": [
+          {
+            "title": "Active Sessions",
+            "type": "stat",
+            "targets": [{"expr": "codepad_active_sessions"}]
+          },
+          {
+            "title": "Request Rate",
+            "type": "graph",
+            "targets": [{"expr": "rate(http_requests_total{namespace='codepad'}[5m])"}]
+          },
+          {
+            "title": "P99 Latency",
+            "type": "graph",
+            "targets": [{"expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))"}]
+          },
+          {
+            "title": "Error Rate",
+            "type": "graph",
+            "targets": [{"expr": "rate(http_requests_total{status=~'5..'}[5m])"}]
+          },
+          {
+            "title": "Execution Time",
+            "type": "graph",
+            "targets": [{"expr": "histogram_quantile(0.95, rate(codepad_execution_duration_seconds_bucket[5m]))"}]
+          },
+          {
+            "title": "WebSocket Connections",
+            "type": "stat",
+            "targets": [{"expr": "codepad_ws_active_connections"}]
+          }
+        ]
+      }
+    }
