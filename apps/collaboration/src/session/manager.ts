@@ -101,12 +101,14 @@ export class SessionManager {
     }
 
     // Broadcast join event
+    /*
     this.broadcastEvent(sessionId, WsEvent.SESSION_JOIN, {
       userId,
       name,
       color,
       participants: presenceTracker.getSessionUsers(sessionId),
     });
+    */
 
     logger.info({ sessionId, userId }, "Client connected");
   }
@@ -134,10 +136,12 @@ export class SessionManager {
 
     presenceTracker.removeUser(sessionId, userId);
 
+    /*
     this.broadcastEvent(sessionId, WsEvent.SESSION_LEAVE, {
       userId,
       participants: presenceTracker.getSessionUsers(sessionId),
     });
+    */
 
     logger.info({ sessionId, userId }, "Client disconnected");
   }
@@ -172,10 +176,12 @@ export class SessionManager {
             sessionId: conn.sessionId,
             timestamp: Date.now(),
           });
+          /*
           // Broadcast to others
           this.broadcastEvent(conn.sessionId, WsEvent.PRESENCE_BROADCAST, {
             participants: presenceTracker.getSessionUsers(conn.sessionId),
           });
+          */
           return;
         }
       } catch (e) {
@@ -199,7 +205,8 @@ export class SessionManager {
     }
   }
 
-  private broadcastEvent(sessionId: string, event: string, data: unknown): void {
+  /*
+  private _broadcastEvent(sessionId: string, event: string, data: unknown): void {
     const conns = this.connections.get(sessionId);
     if (!conns) return;
     const message = JSON.stringify({ event, data });
@@ -209,6 +216,7 @@ export class SessionManager {
       }
     }
   }
+  */
 
   getActiveSessionCount(): number {
     return this.documents.size;
