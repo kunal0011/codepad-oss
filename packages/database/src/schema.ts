@@ -139,7 +139,7 @@ export const sessionFiles = pgTable("session_files", {
 export const executions = pgTable("executions", {
   id: uuid("id").primaryKey().defaultRandom(),
   sessionId: uuid("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
-  userId: uuid("user_id").notNull().references(() => users.id),
+  userId: uuid("user_id").references(() => users.id),
   language: languageEnum("language").notNull(),
   status: executionStatusEnum("status").notNull().default("queued"),
   stdout: text("stdout").default(""),

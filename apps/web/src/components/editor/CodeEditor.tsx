@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useCallback, useEffect, useMemo } from "react";
+import { useRef, useCallback, useEffect } from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
 import type { editor } from "monaco-editor";
 import * as Y from "yjs";
@@ -20,32 +20,42 @@ interface CodeEditorProps {
 export function CodeEditor({ sessionId, language, token }: CodeEditorProps) {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const bindingRef = useRef<MonacoBinding | null>(null);
+  const ydocRef = useRef<Y.Doc | null>(null);
+  const providerRef = useRef<WebsocketProvider | null>(null);
   const { files, activeFile, theme, setActiveFile, isConnected, setConnected } = useSessionStore();
 
   const runtime = LANGUAGE_RUNTIMES[language];
 
-  // Initialize Yjs
-  const { ydoc, provider } = useMemo(() => {
+  // Initialize Yjs in useEffect to handle React 18 Strict Mode correctly
+  useEffect(() => {
     const doc = new Y.Doc();
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8082";
-    const p = new WebsocketProvider(wsUrl, sessionId, doc, {
+    const provider = new WebsocketProvider(wsUrl, sessionId, doc, {
       params: { token },
-      connect: false, // Don't connect immediately
+      connect: false, // Don't connect in constructor
     });
-    return { ydoc: doc, provider: p };
-  }, [sessionId, token]);
 
-  useEffect(() => {
-    provider.connect();
+    ydocRef.current = doc;
+    providerRef.current = provider;
+
     provider.on("status", (event: { status: string }) => {
       setConnected(event.status === "connected");
     });
 
+    // Delay connection to survive React 18 Strict Mode unmount/remount cycle
+    const connectTimer = setTimeout(() => {
+      provider.connect();
+    }, 50);
+
     return () => {
+      clearTimeout(connectTimer);
       provider.disconnect();
-      ydoc.destroy();
+      provider.destroy();
+      doc.destroy();
+      ydocRef.current = null;
+      providerRef.current = null;
     };
-  }, [provider, ydoc, setConnected]);
+  }, [sessionId, token, setConnected]);
 
   const handleMount: OnMount = useCallback((editor) => {
     editorRef.current = editor;
@@ -72,22 +82,33 @@ export function CodeEditor({ sessionId, language, token }: CodeEditorProps) {
       roundedSelection: true,
     });
 
-    // Create Yjs binding
-    const yText = ydoc.getText("code");
-    
-    bindingRef.current = new MonacoBinding(
-      yText,
-      editor.getModel()!,
-      new Set([editor]),
-      provider.awareness
-    );
+    // Create Yjs binding (deferred until refs are ready)
+    const tryBind = () => {
+      const doc = ydocRef.current;
+      const prov = providerRef.current;
+      if (!doc || !prov) {
+        // Refs not ready yet, retry shortly
+        setTimeout(tryBind, 100);
+        return;
+      }
+
+      const yText = doc.getText("code");
+
+      bindingRef.current = new MonacoBinding(
+        yText,
+        editor.getModel()!,
+        new Set([editor]),
+        prov.awareness
+      );
+    };
+    tryBind();
 
     // Sync Monaco changes back to our store (needed for the "Run" button)
     editor.onDidChangeModelContent(() => {
       const content = editor.getValue();
       const { files, activeFile, setFiles } = useSessionStore.getState();
       if (activeFile) {
-        const updatedFiles = files.map(f => 
+        const updatedFiles = files.map(f =>
           f.path === activeFile ? { ...f, content } : f
         );
         setFiles(updatedFiles);
@@ -95,7 +116,7 @@ export function CodeEditor({ sessionId, language, token }: CodeEditorProps) {
     });
 
     editor.focus();
-  }, [language, ydoc, provider.awareness]);
+  }, [language]);
 
   // Clean up binding on file change or unmount
   useEffect(() => {

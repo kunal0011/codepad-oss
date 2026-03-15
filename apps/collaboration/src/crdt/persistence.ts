@@ -1,3 +1,4 @@
+import * as Y from "yjs";
 import Redis from "ioredis";
 import { logger } from "../utils/logger.js";
 
@@ -5,44 +6,58 @@ const REDIS_URL = process.env["REDIS_URL"] ?? "redis://localhost:6379";
 
 export class RedisPersistence {
   private redis: Redis;
+  private sub: Redis;
+  private pub: Redis;
 
   constructor() {
     this.redis = new Redis(REDIS_URL);
-    this.redis.on("error", (err) => {
-      logger.error({ err }, "Redis persistence error");
-    });
+    this.pub = new Redis(REDIS_URL);
+    this.sub = new Redis(REDIS_URL);
+    
+    this.redis.on("error", (err) => logger.error({ err }, "Redis Error"));
+    this.pub.on("error", (err) => logger.error({ err }, "Redis Pub Error"));
+    this.sub.on("error", (err) => logger.error({ err }, "Redis Sub Error"));
   }
 
-  async saveSnapshot(sessionId: string, state: Uint8Array): Promise<void> {
-    try {
-      // Store as a buffer
-      await this.redis.set(`session:${sessionId}:snapshot`, Buffer.from(state));
-      // Set expiration for 7 days (COL-003 / SESSION_DEFAULTS)
-      await this.redis.expire(`session:${sessionId}:snapshot`, 7 * 24 * 60 * 60);
-      logger.debug({ sessionId, size: state.length }, "Saved session snapshot to Redis");
-    } catch (err) {
-      logger.error({ err, sessionId }, "Failed to save session snapshot");
+  async getDocument(sessionId: string): Promise<Uint8Array | null> {
+    const data = await this.redis.getBuffer(`doc:${sessionId}`);
+    return data ? new Uint8Array(data) : null;
+  }
+
+  async saveUpdate(sessionId: string, update: Uint8Array) {
+    // Store latest state (in a real system we might use a more granular log)
+    // For now, we apply update to existing state and store
+    const existing = await this.getDocument(sessionId);
+    const doc = new Y.Doc();
+    if (existing) {
+      Y.applyUpdate(doc, existing);
     }
+    Y.applyUpdate(doc, update);
+    
+    const state = Y.encodeStateAsUpdate(doc);
+    await this.redis.set(`doc:${sessionId}`, Buffer.from(state));
+    
+    // Broadcast to other pods
+    await this.pub.publish(`sync:${sessionId}`, Buffer.from(update));
   }
 
-  async getSnapshot(sessionId: string): Promise<Uint8Array | null> {
-    try {
-      const data = await this.redis.getBuffer(`session:${sessionId}:snapshot`);
-      if (!data) return null;
-      return new Uint8Array(data);
-    } catch (err) {
-      logger.error({ err, sessionId }, "Failed to get session snapshot");
-      return null;
-    }
-  }
+  subscribe(sessionId: string, onUpdate: (update: Uint8Array) => void) {
+    const channel = `sync:${sessionId}`;
+    this.sub.subscribe(channel);
+    
+    const handler = (chan: string, message: string | Buffer) => {
+      if (chan === channel) {
+        onUpdate(new Uint8Array(message as Buffer));
+      }
+    };
 
-  async deleteSnapshot(sessionId: string): Promise<void> {
-    await this.redis.del(`session:${sessionId}:snapshot`);
-  }
+    this.sub.on("messageBuffer", handler);
 
-  async close(): Promise<void> {
-    await this.redis.quit();
+    return () => {
+      this.sub.unsubscribe(channel);
+      this.sub.off("messageBuffer", handler);
+    };
   }
 }
 
-export const persistence = new RedisPersistence();
+export const redisPersistence = new RedisPersistence();

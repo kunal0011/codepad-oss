@@ -4,8 +4,6 @@ import jwt from "jsonwebtoken";
 import { URL } from "url";
 import { sessionManager } from "./session/manager.js";
 import { presenceTracker } from "./presence/tracker.js";
-import { permissionManager } from "./permissions/manager.js";
-import { ParticipantRole } from "@codepad/shared";
 import { logger } from "./utils/logger.js";
 
 const PORT = parseInt(process.env["COLLABORATION_WS_PORT"] ?? "8082", 10);
@@ -42,19 +40,12 @@ wss.on("connection", async (ws: WebSocket, req) => {
 
     // Verify JWT
     let payload: { sub: string; email: string };
-    if (token === "dev-token") {
-      // Mock payload for development/testing
-      payload = { sub: "dev-user", email: "dev@codepad.local" };
-      // Grant permission for development bypass
-      permissionManager.setRole(sessionId, payload.sub, ParticipantRole.EDITOR);
-    } else {
-      try {
-        payload = jwt.verify(token, JWT_SECRET) as { sub: string; email: string };
-      } catch (err) {
-        logger.warn({ token }, "Invalid token");
-        ws.close(4003, "Invalid token");
-        return;
-      }
+    try {
+      payload = jwt.verify(token, JWT_SECRET) as { sub: string; email: string };
+    } catch (err) {
+      logger.warn("Invalid token on WebSocket connection");
+      ws.close(4003, "Invalid token");
+      return;
     }
 
     const conn = {
@@ -75,15 +66,6 @@ wss.on("connection", async (ws: WebSocket, req) => {
       }
     });
 
-    ws.on("close", () => {
-      sessionManager.removeConnection(conn);
-    });
-
-    ws.on("error", (err) => {
-      logger.error({ err, sessionId, userId: conn.userId }, "WebSocket error");
-      sessionManager.removeConnection(conn);
-    });
-
     // Heartbeat
     const heartbeat = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) {
@@ -93,7 +75,14 @@ wss.on("connection", async (ws: WebSocket, req) => {
       }
     }, 5000);
 
-    ws.on("close", () => clearInterval(heartbeat));
+    ws.on("close", () => {
+      clearInterval(heartbeat);
+      sessionManager.removeConnection(conn);
+    });
+
+    ws.on("error", (err) => {
+      logger.error({ err, sessionId, userId: conn.userId }, "WebSocket error");
+    });
   } catch (err) {
     logger.error({ err }, "Connection setup error");
     ws.close(4000, "Internal error");

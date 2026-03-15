@@ -25,7 +25,7 @@ const refreshSchema = z.object({
 
 router.post("/register", validate(registerSchema), async (req, res, next) => {
   try {
-    logger.info({ body: req.body }, "Register request received");
+    logger.info({ body: { ...req.body, password: "[REDACTED]" } }, "Register request received");
     const tokens = await authService.register(req.body.email, req.body.password, req.body.name);
     res.status(201).json({ success: true, data: tokens });
   } catch (err) {
@@ -68,10 +68,15 @@ router.get("/google", passport.authenticate("google", { scope: ["profile", "emai
 router.get(
   "/google/callback",
   passport.authenticate("google", { session: false, failureRedirect: "/login" }),
-  async (req, res) => {
-    const tokens = await authService.generateTokens(req.user as any);
-    const config = getConfig();
-    res.redirect(`${config.frontendUrl}/auth/callback?token=${tokens.accessToken}&refreshToken=${tokens.refreshToken}`);
+  async (req, res, next) => {
+    try {
+      const tokens = await authService.generateTokens(req.user as any);
+      const config = getConfig();
+      res.redirect(`${config.frontendUrl}/auth/callback?token=${tokens.accessToken}&refreshToken=${tokens.refreshToken}`);
+    } catch (err) {
+      logger.error({ err, provider: "google" }, "SSO callback error");
+      next(err);
+    }
   },
 );
 
@@ -80,10 +85,15 @@ router.get("/github", passport.authenticate("github", { scope: ["user:email"] })
 router.get(
   "/github/callback",
   passport.authenticate("github", { session: false, failureRedirect: "/login" }),
-  async (req, res) => {
-    const tokens = await authService.generateTokens(req.user as any);
-    const config = getConfig();
-    res.redirect(`${config.frontendUrl}/auth/callback?token=${tokens.accessToken}&refreshToken=${tokens.refreshToken}`);
+  async (req, res, next) => {
+    try {
+      const tokens = await authService.generateTokens(req.user as any);
+      const config = getConfig();
+      res.redirect(`${config.frontendUrl}/auth/callback?token=${tokens.accessToken}&refreshToken=${tokens.refreshToken}`);
+    } catch (err) {
+      logger.error({ err, provider: "github" }, "SSO callback error");
+      next(err);
+    }
   },
 );
 

@@ -36,7 +36,7 @@ export default function LoginPage() {
         setError(response.error?.message || "Invalid email or password");
       }
     } catch (err) {
-      setError("An unexpected error occurred");
+      setError(err instanceof Error ? err.message : "An unexpected error occurred");
     } finally {
       setIsLoading(false);
     }

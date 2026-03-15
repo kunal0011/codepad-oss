@@ -42,12 +42,18 @@ export function OutputPanel() {
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.open(terminalRef.current);
-    fitAddon.fit();
 
     xtermRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    const handleResize = () => fitAddon.fit();
+    // Defer fit until container has dimensions (framer-motion animation)
+    const fitTimeout = setTimeout(() => {
+      try { fitAddon.fit(); } catch {}
+    }, 300);
+
+    const handleResize = () => {
+      try { fitAddon.fit(); } catch {}
+    };
     window.addEventListener("resize", handleResize);
 
     term.writeln("\x1b[1;34mWelcome to CodePad Terminal\x1b[0m");

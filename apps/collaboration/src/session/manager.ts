@@ -1,9 +1,10 @@
+import * as Y from "yjs";
 import { WebSocket } from "ws";
 import { CollaborativeDocument, MSG_SYNC, MSG_AWARENESS } from "../crdt/document.js";
-import { persistence } from "../crdt/persistence.js";
+import { redisPersistence } from "../crdt/persistence.js";
 import { presenceTracker } from "../presence/tracker.js";
 import { permissionManager, Permission } from "../permissions/manager.js";
-import { WsEvent } from "@codepad/shared";
+import { WsEvent, ParticipantRole } from "@codepad/shared";
 import * as awarenessProtocol from "y-protocols/awareness";
 import * as encoding from "lib0/encoding";
 import * as decoding from "lib0/decoding";
@@ -24,15 +25,39 @@ export class SessionManager {
   async getOrCreateDocument(sessionId: string): Promise<CollaborativeDocument> {
     let doc = this.documents.get(sessionId);
     if (!doc) {
-      const initialState = await persistence.getSnapshot(sessionId);
+      const initialState = await redisPersistence.getDocument(sessionId);
       doc = new CollaborativeDocument(sessionId, initialState ?? undefined);
 
-      // Save snapshots to Redis
-      doc.onSnapshot((state) => {
-        persistence.saveSnapshot(sessionId, state);
+      // Persist to Redis & Broadcast to other pods
+      doc.doc.on("update", (update: Uint8Array, origin: unknown) => {
+        // Only save and broadcast if the update originated locally (not from Redis sync)
+        if (origin !== "redis-sync") {
+          redisPersistence.saveUpdate(sessionId, update);
+          
+          const encoder = encoding.createEncoder();
+          encoding.writeVarUint(encoder, MSG_SYNC);
+          encoding.writeVarUint(encoder, 2); // sync step 2 = update
+          encoding.writeVarUint8Array(encoder, update);
+          const message = encoding.toUint8Array(encoder);
+          this.broadcastToSession(sessionId, message, origin as WebSocket);
+        }
       });
 
-      // Broadcast awareness updates to all session clients
+      // Subscribe to Redis updates from other pods
+      redisPersistence.subscribe(sessionId, (update) => {
+        // Apply update with "redis-sync" origin to avoid infinite loops
+        Y.applyUpdate(doc!.doc, update, "redis-sync");
+        
+        // Broadcast this remote update to all local clients
+        const encoder = encoding.createEncoder();
+        encoding.writeVarUint(encoder, MSG_SYNC);
+        encoding.writeVarUint(encoder, 2);
+        encoding.writeVarUint8Array(encoder, update);
+        const message = encoding.toUint8Array(encoder);
+        this.broadcastToSession(sessionId, message);
+      });
+
+      // Broadcast awareness updates
       doc.awareness.on("update", ({ added, updated, removed }: {
         added: number[];
         updated: number[];
@@ -49,18 +74,8 @@ export class SessionManager {
         this.broadcastToSession(sessionId, message);
       });
 
-      // Broadcast doc updates
-      doc.doc.on("update", (update: Uint8Array, origin: unknown) => {
-        const encoder = encoding.createEncoder();
-        encoding.writeVarUint(encoder, MSG_SYNC);
-        encoding.writeVarUint(encoder, 2); // sync step 2 = update
-        encoding.writeVarUint8Array(encoder, update);
-        const message = encoding.toUint8Array(encoder);
-        this.broadcastToSession(sessionId, message, origin as WebSocket);
-      });
-
       this.documents.set(sessionId, doc);
-      logger.info({ sessionId }, "Document created");
+      logger.info({ sessionId }, "Document created with Redis sync");
     }
     return doc;
   }
@@ -74,6 +89,9 @@ export class SessionManager {
     this.connections.get(sessionId)!.add(conn);
 
     presenceTracker.addUser(sessionId, userId, name, color);
+
+    // Grant EDITOR role by default — the API already controls who can join
+    permissionManager.setRole(sessionId, userId, ParticipantRole.EDITOR);
 
     // Send sync step 1 to new client
     const doc = await this.getOrCreateDocument(sessionId);
@@ -165,7 +183,7 @@ export class SessionManager {
       }
     }
 
-    const response = doc.handleSyncMessage(message);
+    const response = doc.handleSyncMessage(message, conn.ws);
     if (response && conn.ws.readyState === WebSocket.OPEN) {
       conn.ws.send(response);
     }

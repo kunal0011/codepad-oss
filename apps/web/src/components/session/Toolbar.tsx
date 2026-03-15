@@ -13,9 +13,15 @@ import {
   Moon, 
   Terminal as TerminalIcon,
   Settings,
-  Share2
+  Share2,
+  Mic,
+  MicOff,
+  Video,
+  VideoOff,
+  LogOut
 } from "lucide-react";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 interface ToolbarProps {
   sessionCode?: string;
@@ -23,10 +29,24 @@ interface ToolbarProps {
 }
 
 export function Toolbar({ sessionCode, language }: ToolbarProps) {
+  const router = useRouter();
   const { session, files, isExecuting, participants, isConnected, theme, setTheme } = useSessionStore();
   const [copied, setCopied] = useState(false);
+  const [isAudioEnabled, setIsAudioEnabled] = useState(false);
+  const [isVideoEnabled, setIsVideoEnabled] = useState(false);
 
   const runtime = LANGUAGE_RUNTIMES[language];
+
+  const handleLeave = async () => {
+    if (!session) return;
+    try {
+      await api.leaveSession(session.id);
+      router.push("/dashboard");
+    } catch (err) {
+      console.error("Failed to leave session:", err);
+      router.push("/dashboard");
+    }
+  };
 
   const handleRun = async () => {
     const { session, files, isExecuting } = useSessionStore.getState();
@@ -151,6 +171,27 @@ export function Toolbar({ sessionCode, language }: ToolbarProps) {
 
           <div className="flex items-center gap-1">
             <button
+              onClick={() => setIsAudioEnabled(!isAudioEnabled)}
+              className={cn(
+                "flex h-9 w-9 items-center justify-center rounded-full transition-all",
+                isAudioEnabled ? "text-emerald-400 bg-emerald-500/10" : "text-slate-400 hover:bg-white/5 hover:text-white"
+              )}
+            >
+              {isAudioEnabled ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
+            </button>
+            <button
+              onClick={() => setIsVideoEnabled(!isVideoEnabled)}
+              className={cn(
+                "flex h-9 w-9 items-center justify-center rounded-full transition-all",
+                isVideoEnabled ? "text-emerald-400 bg-emerald-500/10" : "text-slate-400 hover:bg-white/5 hover:text-white"
+              )}
+            >
+              {isVideoEnabled ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
+            </button>
+
+            <div className="h-6 w-px bg-white/10 mx-1" />
+
+            <button
               onClick={() => setTheme(theme === "vs-dark" ? "light" : "vs-dark")}
               className="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 hover:bg-white/5 hover:text-white transition-all"
             >
@@ -161,6 +202,14 @@ export function Toolbar({ sessionCode, language }: ToolbarProps) {
             </button>
             <button className="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 hover:bg-white/5 hover:text-white transition-all">
               <Settings className="h-5 w-5" />
+            </button>
+
+            <button 
+              onClick={handleLeave}
+              className="ml-2 flex items-center gap-2 h-9 px-4 rounded-xl text-xs font-bold text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-all border border-transparent hover:border-red-500/20"
+            >
+              <LogOut className="h-4 w-4" />
+              <span className="hidden xl:inline">Leave</span>
             </button>
           </div>
         </div>

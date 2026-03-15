@@ -46,7 +46,7 @@ export class CollaborativeDocument {
     Y.applyUpdate(this.doc, update);
   }
 
-  handleSyncMessage(message: Uint8Array): Uint8Array | null {
+  handleSyncMessage(message: Uint8Array, origin: unknown = null): Uint8Array | null {
     const encoder = encoding.createEncoder();
     const decoder = decoding.createDecoder(message);
     const messageType = decoding.readVarUint(decoder);
@@ -54,7 +54,7 @@ export class CollaborativeDocument {
     switch (messageType) {
       case MSG_SYNC: {
         encoding.writeVarUint(encoder, MSG_SYNC);
-        syncProtocol.readSyncMessage(decoder, encoder, this.doc, null);
+        syncProtocol.readSyncMessage(decoder, encoder, this.doc, origin);
         if (encoding.length(encoder) > 1) {
           return encoding.toUint8Array(encoder);
         }
@@ -75,6 +75,7 @@ export class CollaborativeDocument {
   createSyncStep1(): Uint8Array {
     const encoder = encoding.createEncoder();
     encoding.writeVarUint(encoder, MSG_SYNC);
+    // writeSyncStep1 already writes the step type marker internally
     syncProtocol.writeSyncStep1(encoder, this.doc);
     return encoding.toUint8Array(encoder);
   }
@@ -82,6 +83,7 @@ export class CollaborativeDocument {
   createSyncStep2(stateVector: Uint8Array): Uint8Array {
     const encoder = encoding.createEncoder();
     encoding.writeVarUint(encoder, MSG_SYNC);
+    // writeSyncStep2 already writes the step type marker internally
     syncProtocol.writeSyncStep2(encoder, this.doc, stateVector);
     return encoding.toUint8Array(encoder);
   }

@@ -128,7 +128,7 @@ export default function HomePage() {
             {/* New Session Card */}
             <motion.div 
               variants={itemVariants}
-              className="lg:col-span-7 group relative rounded-3xl border border-white/10 bg-white/[0.02] p-8 backdrop-blur-xl transition-all hover:bg-white/[0.04]"
+              className="lg:col-span-12 group relative rounded-3xl border border-white/10 bg-white/[0.02] p-8 backdrop-blur-xl transition-all hover:bg-white/[0.04]"
             >
               <div className="flex items-center justify-between mb-8">
                 <div className="text-left">
@@ -140,7 +140,7 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                 {LANGUAGES.map((lang) => (
                   <button
                     key={lang.value}
@@ -151,60 +151,6 @@ export default function HomePage() {
                     <span className="text-xs font-bold uppercase tracking-wider">{lang.label}</span>
                   </button>
                 ))}
-              </div>
-            </motion.div>
-
-            {/* Join Session Card */}
-            <motion.div 
-              variants={itemVariants}
-              className="lg:col-span-5 rounded-3xl border border-white/10 bg-white/[0.02] p-8 backdrop-blur-xl transition-all hover:bg-white/[0.04]"
-            >
-              <div className="flex items-center justify-between mb-8">
-                <div className="text-left">
-                  <h2 className="text-2xl font-bold">Join Existing</h2>
-                  <p className="text-sm text-slate-500 mt-1">Connect to an ongoing session.</p>
-                </div>
-                <div className="h-12 w-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 border border-emerald-500/20">
-                  <Users className="h-6 w-6" />
-                </div>
-              </div>
-
-              <div className="space-y-6">
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={joinCode}
-                    onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                    placeholder="ABCDEF"
-                    maxLength={6}
-                    className="w-full h-20 rounded-2xl border border-white/10 bg-black/40 px-4 text-center font-mono text-4xl tracking-[0.4em] text-white placeholder:text-slate-800 focus:border-primary/50 focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all"
-                  />
-                  <div className="absolute -top-3 left-6 px-2 bg-[#020617] text-[10px] font-bold text-slate-500 uppercase tracking-widest">Session Code</div>
-                </div>
-
-                <button
-                  onClick={() => joinCode.length === 6 && router.push(`/session/join/${joinCode}`)}
-                  disabled={joinCode.length !== 6}
-                  className="group flex w-full items-center justify-center gap-3 h-16 rounded-2xl bg-primary px-6 font-bold text-white transition-all hover:bg-blue-500 hover:shadow-[0_0_30px_rgba(59,130,246,0.4)] disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
-                >
-                  <span>Connect to Workspace</span>
-                  <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
-                </button>
-
-                {/* Features Grid */}
-                <div className="grid grid-cols-2 gap-4 mt-8 pt-8 border-t border-white/5">
-                  {[
-                    { icon: Cpu, label: "V8 Sandbox" },
-                    { icon: Video, label: "Live Video" },
-                    { icon: Shield, label: "Secure Exec" },
-                    { icon: Code2, label: "IntelliSense" }
-                  ].map((feat, i) => (
-                    <div key={i} className="flex items-center gap-2 text-slate-500 hover:text-slate-300 transition-colors">
-                      <feat.icon className="h-4 w-4" />
-                      <span className="text-[10px] font-bold uppercase tracking-tight">{feat.label}</span>
-                    </div>
-                  ))}
-                </div>
               </div>
             </motion.div>
 

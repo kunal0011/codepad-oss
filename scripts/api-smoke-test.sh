@@ -12,7 +12,7 @@ echo "🚀 Starting API Smoke Test..."
 
 # 1. Health Check
 echo -n "Checking health endpoint... "
-curl -s -o /dev/null -w "%{http_code}" "$API_URL/health" | grep -q "200" && echo "✅" || echo "❌"
+curl -s -o /dev/null -w "%{http_code}" "$(echo $API_URL | sed 's|/api/v1||')/health" | grep -q "200" && echo "✅" || echo "❌"
 
 # 2. List Questions
 echo -n "Testing list questions... "

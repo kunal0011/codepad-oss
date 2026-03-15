@@ -2,25 +2,40 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { useSessionStore } from "@/stores/session";
 import { Toolbar } from "@/components/session/Toolbar";
 import { ParticipantsSidebar } from "@/components/session/ParticipantsSidebar";
-import { CodeEditor } from "@/components/editor/CodeEditor";
-import { OutputPanel } from "@/components/terminal/OutputPanel";
 import { api } from "@/lib/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, AlertCircle, Maximize2, Terminal as TerminalIcon, FileCode } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// Dynamic imports for components that use browser-only APIs (xterm, monaco, y-websocket)
+const CodeEditor = dynamic(
+  () => import("@/components/editor/CodeEditor").then((m) => m.CodeEditor),
+  { ssr: false },
+);
+const OutputPanel = dynamic(
+  () => import("@/components/terminal/OutputPanel").then((m) => m.OutputPanel),
+  { ssr: false },
+);
+
 export default function SessionPage() {
   const { id } = useParams();
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
   const { session, setSession, setParticipants, setFiles, reset } = useSessionStore();
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
     async function loadSession() {
       if (!id) return;
       
@@ -36,8 +51,7 @@ export default function SessionPage() {
           setError("Session not found or expired");
         }
       } catch (err) {
-        console.error("Failed to load session:", err);
-        setError("An unexpected error occurred while loading the session");
+        setError(err instanceof Error ? err.message : "Failed to load session");
       } finally {
         setIsLoading(false);
       }
@@ -48,9 +62,9 @@ export default function SessionPage() {
     return () => {
       // Don't reset on every re-render, only on true unmount from the session
     };
-  }, [id, setSession, setParticipants, setFiles]);
+  }, [id, mounted, setSession, setParticipants, setFiles]);
 
-  if (isLoading) {
+  if (!mounted || isLoading) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-[#020617] text-white">
         <motion.div 
@@ -130,10 +144,10 @@ export default function SessionPage() {
             transition={{ delay: 0.1 }}
             className="flex-[2] min-h-0"
           >
-            <CodeEditor 
-              sessionId={session.id} 
-              language={session.language} 
-              token="dev-token" // This will come from auth later
+            <CodeEditor
+              sessionId={session.id}
+              language={session.language}
+              token={api.getToken() ?? ""}
             />
           </motion.section>
 

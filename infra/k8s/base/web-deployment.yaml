@@ -25,9 +25,9 @@ spec:
               protocol: TCP
           env:
             - name: NEXT_PUBLIC_API_URL
-              value: "http://localhost:8080"
+              value: "http://localhost:30080"
             - name: NEXT_PUBLIC_WS_URL
-              value: "ws://localhost:8082"
+              value: "ws://localhost:30082"
           resources:
             requests:
               cpu: 100m

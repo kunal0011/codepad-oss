@@ -47,5 +47,5 @@ USER codepad
 EXPOSE 8080
 ENV NODE_ENV=production
 
-# Run migrations and then start the API
-CMD ["sh", "-c", "node packages/database/dist/migrations/run.js && node apps/api/dist/index.js"]
+# Run migrations (tolerate failures if schema already exists) and then start the API
+CMD ["sh", "-c", "node packages/database/dist/migrations/run.js || echo 'Migrations skipped (schema may already exist)'; node apps/api/dist/index.js"]

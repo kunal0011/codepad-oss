@@ -21,7 +21,6 @@ const port = parseInt(process.env["API_PORT"] ?? "8080", 10);
 configurePassport();
 app.use(passport.initialize());
 
-// ─── Global Middleware ──────────────────────────────────────
 app.use(helmet());
 app.use(
   cors({
@@ -38,7 +37,6 @@ app.use(
   }),
 );
 
-// Rate limiting (exempt health checks)
 const limiter = rateLimit({
   windowMs: 60_000,
   max: 100,
@@ -49,7 +47,6 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// ─── Routes ─────────────────────────────────────────────────
 app.use(healthRoutes);
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/sessions", sessionRoutes);
@@ -57,10 +54,8 @@ app.use("/api/v1/executions", executionRoutes);
 app.use("/api/v1/assessments", assessmentRoutes);
 app.use("/api/v1/recordings", recordingRoutes);
 
-// ─── Error Handler ──────────────────────────────────────────
 app.use(errorHandler);
 
-// ─── Start ──────────────────────────────────────────────────
 app.listen(port, () => {
   logger.info({ port, env: process.env["NODE_ENV"] ?? "development" }, "CodePad API started");
 });

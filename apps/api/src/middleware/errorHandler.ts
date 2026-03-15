@@ -34,14 +34,20 @@ export function errorHandler(
     return;
   }
 
-  logger.error({ err, url: req.url, method: req.method }, "Unhandled error");
-  console.error(`[EMERGENCY ERROR] ${req.method} ${req.url}:`, err);
+  logger.error(
+    { err, url: req.url, method: req.method, stack: err.stack },
+    "Unhandled error: %s",
+    err.message,
+  );
+
+  const isDev = process.env["NODE_ENV"] !== "production";
 
   res.status(500).json({
     success: false,
     error: {
       code: "INTERNAL_ERROR",
-      message: "An unexpected error occurred",
+      message: isDev ? err.message : "An unexpected error occurred",
+      ...(isDev && { stack: err.stack }),
     },
   });
 }

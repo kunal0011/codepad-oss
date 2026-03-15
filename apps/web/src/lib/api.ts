@@ -78,7 +78,9 @@ class ApiClient {
       const data: ApiResponse<AuthTokens> = await response.json();
       if (data.success && data.data) {
         this.setToken(data.data.accessToken);
-        localStorage.setItem("codepad_refresh_token", data.data.refreshToken);
+        if (typeof window !== "undefined") {
+          localStorage.setItem("codepad_refresh_token", data.data.refreshToken);
+        }
         return true;
       }
     } catch {
@@ -95,7 +97,9 @@ class ApiClient {
     });
     if (response.success && response.data) {
       this.setToken(response.data.accessToken);
-      localStorage.setItem("codepad_refresh_token", response.data.refreshToken);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("codepad_refresh_token", response.data.refreshToken);
+      }
     }
     return response;
   }
@@ -107,7 +111,9 @@ class ApiClient {
     });
     if (response.success && response.data) {
       this.setToken(response.data.accessToken);
-      localStorage.setItem("codepad_refresh_token", response.data.refreshToken);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("codepad_refresh_token", response.data.refreshToken);
+      }
     }
     return response;
   }
@@ -132,6 +138,12 @@ class ApiClient {
     });
   }
 
+  async leaveSession(sessionId: string) {
+    return this.request<never>(`/api/v1/sessions/${sessionId}/leave`, {
+      method: "POST",
+    });
+  }
+
   async listSessions(page = 1, pageSize = 20) {
     return this.request<Session[]>(`/api/v1/sessions?page=${page}&pageSize=${pageSize}`);
   }
@@ -142,6 +154,13 @@ class ApiClient {
 
   async getSessionFiles(sessionId: string) {
     return this.request<FileEntry[]>(`/api/v1/sessions/${sessionId}/files`);
+  }
+
+  async createFile(sessionId: string, path: string, content = "") {
+    return this.request<FileEntry>(`/api/v1/sessions/${sessionId}/files`, {
+      method: "POST",
+      body: JSON.stringify({ path, content }),
+    });
   }
 
   // Execution

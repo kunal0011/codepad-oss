@@ -1,9 +1,10 @@
 import {
-  type SessionSettings,
-  type Language,
-  type SessionType,
+  SessionSettings,
+  Language,
+  SessionType,
   SessionStatus,
   ParticipantRole,
+  SessionParticipant,
   PARTICIPANT_COLORS,
   generateSessionCode,
   LANGUAGE_RUNTIMES,
@@ -16,10 +17,13 @@ import {
   sessionFiles,
   eq,
   and,
+  or,
+  ilike,
   desc,
   sql,
+  inArray,
 } from "@codepad/database";
-import { NotFoundError, ForbiddenError, ValidationError } from "../utils/errors.js";
+import { NotFoundError, ForbiddenError } from "../utils/errors.js";
 import { logger } from "../utils/logger.js";
 
 const defaultSettings: SessionSettings = {
@@ -141,68 +145,58 @@ export class SessionService {
 
   async searchSessions(query: string, page = 1, pageSize = 10) {
     const offset = (page - 1) * pageSize;
-    const searchPattern = `%${query.toLowerCase()}%`;
+    const searchPattern = `%${query}%`;
 
-    // Only search active sessions
-    const results = await this.db.query.sessions.findMany({
-      where: and(
-        eq(sessions.status, "active"),
-        sql`lower(${sessions.title}) LIKE ${searchPattern} OR lower(${sessions.code}) LIKE ${searchPattern}`,
-      ),
-      limit: pageSize,
-      offset,
-      orderBy: [desc(sessions.updatedAt)],
-    });
+    try {
+      // Only search active sessions
+      const results = await this.db.query.sessions.findMany({
+        where: and(
+          inArray(sessions.status, ["created", "active"]),
+          or(
+            ilike(sessions.title, searchPattern),
+            ilike(sessions.code, searchPattern),
+          ),
+        ),
+        limit: pageSize,
+        offset,
+        orderBy: [desc(sessions.updatedAt)],
+      });
 
-    return results;
+      return results;
+    } catch (err) {
+      logger.error({ err, query }, "Search sessions service error");
+      throw err;
+    }
   }
 
-  async join(sessionId: string, userId: string, role?: ParticipantRole) {
+  async join(sessionId: string, userId: string): Promise<SessionParticipant> {
     const session = await this.getById(sessionId);
 
     // Check if already a participant
-    const existing = await this.db.query.sessionParticipants.findFirst({
-      where: and(
-        eq(sessionParticipants.sessionId, sessionId),
-        eq(sessionParticipants.userId, userId),
-      ),
+    const [existing] = await this.db
+      .select()
+      .from(sessionParticipants)
+      .where(and(eq(sessionParticipants.sessionId, sessionId), eq(sessionParticipants.userId, userId)))
+      .limit(1);
+
+    if (existing) return (await this.getParticipants(sessionId)).find(p => p.userId === userId)!;
+  
+
+    // Join as editor
+    await this.db.insert(sessionParticipants).values({
+      sessionId,
+      userId,
+      role: "editor",
+      color: PARTICIPANT_COLORS[Math.floor(Math.random() * PARTICIPANT_COLORS.length)]!,
     });
 
-    if (existing) {
-      return existing;
+    // If session is 'created', mark it as 'active' when first person joins
+    if (session.status === SessionStatus.CREATED) {
+      await this.updateStatus(sessionId, SessionStatus.ACTIVE, userId);
     }
 
-    // Get current participant count for color assignment
-    const participants = await this.db.query.sessionParticipants.findMany({
-      where: eq(sessionParticipants.sessionId, sessionId),
-    });
-
-    const settings = session.settings as SessionSettings;
-    if (participants.length >= settings.maxParticipants) {
-      throw new ValidationError("Session is full");
-    }
-
-    const colorIndex = participants.length % PARTICIPANT_COLORS.length;
-
-    const [participant] = await this.db
-      .insert(sessionParticipants)
-      .values({
-        sessionId,
-        userId,
-        role: role ?? "editor",
-        color: PARTICIPANT_COLORS[colorIndex]!,
-      })
-      .returning();
-
-    // Activate session if not already
-    if (session.status === "created") {
-      await this.db
-        .update(sessions)
-        .set({ status: "active", updatedAt: new Date() })
-        .where(eq(sessions.id, sessionId));
-    }
-
-    return participant!;
+    const participants = await this.getParticipants(sessionId);
+    return participants.find((p) => p.userId === userId)!;
   }
 
   async leave(sessionId: string, userId: string) {
@@ -232,6 +226,23 @@ export class SessionService {
     return this.db.query.sessionFiles.findMany({
       where: eq(sessionFiles.sessionId, sessionId),
     });
+  }
+
+  async createFile(sessionId: string, path: string, content = "") {
+    const [file] = await this.db
+      .insert(sessionFiles)
+      .values({
+        sessionId,
+        path,
+        content,
+        isEntryPoint: false,
+      })
+      .onConflictDoUpdate({
+        target: [sessionFiles.sessionId, sessionFiles.path],
+        set: { content },
+      })
+      .returning();
+    return file;
   }
 
   async updateFile(sessionId: string, path: string, content: string) {
@@ -273,6 +284,8 @@ export class SessionService {
 
     return results.map((r) => ({
       ...r,
+      role: r.role as ParticipantRole,
+      avatarUrl: r.avatarUrl ?? undefined,
       isConnected: r.leftAt === null,
     }));
   }
