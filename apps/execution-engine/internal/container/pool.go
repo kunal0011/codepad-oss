@@ -12,6 +12,7 @@ import (
 	"github.com/codepad/execution-engine/pkg/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
 	"github.com/rs/zerolog/log"
 )
@@ -75,6 +76,11 @@ func NewPool(cfg *config.Config) (*Pool, error) {
 		warm:   make(map[types.Language][]*ContainerInfo),
 		active: make(map[string]*ContainerInfo),
 		stopCh: make(chan struct{}),
+	}
+
+	// Initialize cache volumes
+	if err := p.initVolumes(context.Background()); err != nil {
+		log.Error().Err(err).Msg("Failed to initialize compiler cache volumes")
 	}
 
 	return p, nil
@@ -243,6 +249,14 @@ func (p *Pool) create(ctx context.Context, language types.Language, sessionID st
 		},
 	}
 
+	var binds []string
+	if language == types.Rust {
+		binds = append(binds, "codepad-rust-cache:/usr/local/cargo/registry")
+		binds = append(binds, "codepad-rust-target-cache:/workspace/target")
+	} else if language == types.Cpp {
+		binds = append(binds, "codepad-cpp-cache:/workspace/.cache")
+	}
+
 	hostConfig := &container.HostConfig{
 		Resources: container.Resources{
 			Memory:     memoryBytes,
@@ -250,9 +264,14 @@ func (p *Pool) create(ctx context.Context, language types.Language, sessionID st
 			MemorySwap: memoryBytes, // No swap
 			PidsLimit:  int64Ptr(64),
 		},
-		ReadonlyRootfs: false,
+		ReadonlyRootfs: true,
 		SecurityOpt:    []string{"no-new-privileges"},
 		CapDrop:        []string{"ALL"},
+		Tmpfs: map[string]string{
+			"/tmp":       "rw,noexec,nosuid,size=64m",
+			"/workspace": "rw,size=64m",
+		},
+		Binds: binds,
 	}
 
 	var name string
@@ -500,4 +519,22 @@ func generateRandomID(length int) string {
 		return "unknown"
 	}
 	return hex.EncodeToString(b)
+}
+
+func (p *Pool) initVolumes(ctx context.Context) error {
+	volumesToCreate := []string{"codepad-rust-cache", "codepad-rust-target-cache", "codepad-cpp-cache"}
+	for _, name := range volumesToCreate {
+		_, err := p.docker.VolumeCreate(ctx, volume.CreateOptions{
+			Name: name,
+			Labels: map[string]string{
+				"codepad.managed": "true",
+			},
+		})
+		if err != nil {
+			log.Warn().Err(err).Str("volume", name).Msg("Could not create cache volume")
+		} else {
+			log.Info().Str("volume", name).Msg("Ensured cache volume exists")
+		}
+	}
+	return nil
 }

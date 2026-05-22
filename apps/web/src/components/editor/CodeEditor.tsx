@@ -10,6 +10,7 @@ import { useSessionStore } from "@/stores/session";
 import { LANGUAGE_RUNTIMES, type Language } from "@codepad/shared";
 import { cn } from "@/lib/utils";
 import { Loader2, X } from "lucide-react";
+import { Panel } from "@codepad/ui";
 
 interface CodeEditorProps {
   sessionId: string;
@@ -129,7 +130,7 @@ export function CodeEditor({ sessionId, language, token }: CodeEditorProps) {
   }, [activeFile]);
 
   return (
-    <div className="flex h-full flex-col overflow-hidden glass-panel rounded-xl">
+    <Panel className="flex h-full flex-col overflow-hidden rounded-xl">
       {/* Tab bar */}
       <div className="flex items-center justify-between border-b border-white/10 bg-white/5 px-2">
         <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-1">
@@ -185,6 +186,6 @@ export function CodeEditor({ sessionId, language, token }: CodeEditorProps) {
           }}
         />
       </div>
-    </div>
+    </Panel>
   );
 }

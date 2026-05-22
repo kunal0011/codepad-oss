@@ -7,6 +7,7 @@ import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { cn } from "@/lib/utils";
+import { Panel } from "@codepad/ui";
 import { 
   Terminal as TerminalIcon, 
   Trash2, 
@@ -65,24 +66,51 @@ export function OutputPanel() {
     };
   }, []);
 
-  // Update terminal when execution result changes
+  // Listen to streaming execution events
   useEffect(() => {
-    if (!xtermRef.current) return;
+    const handleStart = () => {
+      if (!xtermRef.current) return;
+      xtermRef.current.clear();
+      xtermRef.current.writeln("\x1b[1;33m[RUNNING]\x1b[0m Executing code...\r\n");
+    };
 
-    if (isExecuting) {
-      xtermRef.current.writeln("\x1b[1;33m[RUNNING]\x1b[0m Executing code...");
-    } else if (executionResult) {
-      if (executionResult.stdout) {
-        xtermRef.current.write(executionResult.stdout);
-      }
-      if (executionResult.stderr) {
-        xtermRef.current.write(`\x1b[1;31m${executionResult.stderr}\x1b[0m`);
-      }
+    const handleChunk = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const chunk = customEvent.detail;
+      if (!xtermRef.current) return;
       
-      const statusColor = executionResult.exitCode === 0 ? "32" : "31";
-      xtermRef.current.writeln(`\r\n\x1b[1;${statusColor}m[FINISHED]\x1b[0m Exit code: ${executionResult.exitCode} (${formatDuration(executionResult.executionTimeMs)})`);
-    }
-  }, [executionResult, isExecuting]);
+      if (chunk.stream === "stderr") {
+        xtermRef.current.write(`\x1b[1;31m${chunk.data}\x1b[0m`);
+      } else {
+        xtermRef.current.write(chunk.data);
+      }
+    };
+
+    const handleError = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const errorData = customEvent.detail;
+      if (!xtermRef.current) return;
+      xtermRef.current.writeln(`\r\n\x1b[1;31m[ERROR] ${errorData.error || errorData}\x1b[0m`);
+    };
+
+    window.addEventListener("exec:start", handleStart);
+    window.addEventListener("exec:chunk", handleChunk);
+    window.addEventListener("exec:error", handleError);
+
+    return () => {
+      window.removeEventListener("exec:start", handleStart);
+      window.removeEventListener("exec:chunk", handleChunk);
+      window.removeEventListener("exec:error", handleError);
+    };
+  }, []);
+
+  // Update terminal when execution result completes
+  useEffect(() => {
+    if (!xtermRef.current || !executionResult) return;
+
+    const statusColor = executionResult.exitCode === 0 ? "32" : "31";
+    xtermRef.current.writeln(`\r\n\x1b[1;${statusColor}m[FINISHED]\x1b[0m Exit code: ${executionResult.exitCode} (${formatDuration(executionResult.executionTimeMs)})`);
+  }, [executionResult]);
 
   const clearTerminal = () => {
     xtermRef.current?.clear();
@@ -101,7 +129,7 @@ export function OutputPanel() {
   };
 
   return (
-    <div className="flex h-full flex-col glass-panel rounded-xl overflow-hidden">
+    <Panel className="flex h-full flex-col overflow-hidden rounded-xl">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-white/10 bg-white/5 px-4 py-2">
         <div className="flex items-center gap-3">
@@ -138,6 +166,6 @@ export function OutputPanel() {
       <div className="flex-1 p-2 bg-black/20">
         <div ref={terminalRef} className="h-full w-full" />
       </div>
-    </div>
+    </Panel>
   );
 }

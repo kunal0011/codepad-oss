@@ -26,14 +26,23 @@ import { useRouter } from "next/navigation";
 interface ToolbarProps {
   sessionCode?: string;
   language: Language;
+  isAudioEnabled: boolean;
+  isVideoEnabled: boolean;
+  onToggleAudio: () => void;
+  onToggleVideo: () => void;
 }
 
-export function Toolbar({ sessionCode, language }: ToolbarProps) {
+export function Toolbar({
+  sessionCode,
+  language,
+  isAudioEnabled,
+  isVideoEnabled,
+  onToggleAudio,
+  onToggleVideo,
+}: ToolbarProps) {
   const router = useRouter();
   const { session, files, isExecuting, participants, isConnected, theme, setTheme } = useSessionStore();
   const [copied, setCopied] = useState(false);
-  const [isAudioEnabled, setIsAudioEnabled] = useState(false);
-  const [isVideoEnabled, setIsVideoEnabled] = useState(false);
 
   const runtime = LANGUAGE_RUNTIMES[language];
 
@@ -54,18 +63,29 @@ export function Toolbar({ sessionCode, language }: ToolbarProps) {
 
     useSessionStore.getState().setExecuting(true);
     useSessionStore.getState().setExecutionResult(null);
+    window.dispatchEvent(new CustomEvent("exec:start"));
 
     try {
-      const result = await api.executeCode({
-        sessionId: session.id,
-        language,
-        files,
-      });
-      if (result.success && result.data) {
-        useSessionStore.getState().setExecutionResult(result.data);
-      }
+      await api.executeCodeStream(
+        {
+          sessionId: session.id,
+          language,
+          files,
+        },
+        (event, data) => {
+          if (event === "chunk") {
+            window.dispatchEvent(new CustomEvent("exec:chunk", { detail: data }));
+          } else if (event === "result") {
+            useSessionStore.getState().setExecutionResult(data);
+          } else if (event === "error") {
+            window.dispatchEvent(new CustomEvent("exec:error", { detail: data }));
+          }
+        }
+      );
     } catch (err) {
       console.error("Execution failed:", err);
+      const errorMessage = err instanceof Error ? err.message : "Execution failed";
+      window.dispatchEvent(new CustomEvent("exec:error", { detail: { error: errorMessage } }));
     } finally {
       useSessionStore.getState().setExecuting(false);
     }
@@ -171,7 +191,7 @@ export function Toolbar({ sessionCode, language }: ToolbarProps) {
 
           <div className="flex items-center gap-1">
             <button
-              onClick={() => setIsAudioEnabled(!isAudioEnabled)}
+              onClick={onToggleAudio}
               className={cn(
                 "flex h-9 w-9 items-center justify-center rounded-full transition-all",
                 isAudioEnabled ? "text-emerald-400 bg-emerald-500/10" : "text-slate-400 hover:bg-white/5 hover:text-white"
@@ -180,7 +200,7 @@ export function Toolbar({ sessionCode, language }: ToolbarProps) {
               {isAudioEnabled ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
             </button>
             <button
-              onClick={() => setIsVideoEnabled(!isVideoEnabled)}
+              onClick={onToggleVideo}
               className={cn(
                 "flex h-9 w-9 items-center justify-center rounded-full transition-all",
                 isVideoEnabled ? "text-emerald-400 bg-emerald-500/10" : "text-slate-400 hover:bg-white/5 hover:text-white"

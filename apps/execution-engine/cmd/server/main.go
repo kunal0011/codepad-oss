@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/codepad/execution-engine/internal/executor"
 	"github.com/codepad/execution-engine/internal/governor"
 	"github.com/codepad/execution-engine/internal/runtime"
+	"github.com/codepad/execution-engine/internal/streaming"
 	"github.com/codepad/execution-engine/pkg/config"
 	"github.com/codepad/execution-engine/pkg/types"
 	"github.com/gin-gonic/gin"
@@ -127,7 +129,7 @@ func main() {
 			)
 			defer execCancel()
 
-			result, err := exec.Execute(execCtx, req)
+			result, err := exec.Execute(execCtx, req, nil)
 			if err != nil {
 				log.Error().Err(err).Str("executionId", req.ExecutionID).Msg("Execution failed")
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -135,6 +137,60 @@ func main() {
 			}
 
 			c.JSON(http.StatusOK, result)
+		})
+
+		// Real-time streamed code execution using Server-Sent Events (SSE)
+		v1.POST("/execute/stream", func(c *gin.Context) {
+			var req types.ExecutionRequest
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": "Invalid request: " + err.Error(),
+				})
+				return
+			}
+
+			log.Info().
+				Str("executionId", req.ExecutionID).
+				Str("language", string(req.Language)).
+				Int("fileCount", len(req.Files)).
+				Int("timeout", req.Timeout).
+				Msg("Execution stream request received")
+
+			execCtx, execCancel := context.WithTimeout(
+				c.Request.Context(),
+				time.Duration(req.Timeout+5)*time.Second,
+			)
+			defer execCancel()
+
+			c.Header("Content-Type", "text/event-stream")
+			c.Header("Cache-Control", "no-cache")
+			c.Header("Connection", "keep-alive")
+			c.Header("Transfer-Encoding", "chunked")
+			c.Header("X-Accel-Buffering", "no")
+
+			// SSE stream callback
+			callback := func(chunk streaming.OutputChunk) {
+				data, err := json.Marshal(chunk)
+				if err == nil {
+					fmt.Fprintf(c.Writer, "data: %s\n\n", data)
+					c.Writer.Flush()
+				}
+			}
+
+			result, err := exec.Execute(execCtx, req, callback)
+			if err != nil {
+				log.Error().Err(err).Str("executionId", req.ExecutionID).Msg("Execution failed")
+				errorMsg := map[string]string{"error": err.Error()}
+				data, _ := json.Marshal(errorMsg)
+				fmt.Fprintf(c.Writer, "event: error\ndata: %s\n\n", data)
+				c.Writer.Flush()
+				return
+			}
+
+			// Send final execution completion result
+			data, _ := json.Marshal(result)
+			fmt.Fprintf(c.Writer, "event: result\ndata: %s\n\n", data)
+			c.Writer.Flush()
 		})
 
 		// CE-002: List supported runtimes

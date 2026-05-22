@@ -29,6 +29,11 @@ const configSchema = z.object({
 
   // Collaboration
   collaborationWsPort: z.coerce.number().default(8082),
+
+  // LiveKit (Audio/Video Call)
+  livekitUrl: z.string().optional(),
+  livekitApiKey: z.string().optional(),
+  livekitApiSecret: z.string().optional(),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -54,6 +59,9 @@ export function getConfig(): Config {
       githubClientSecret: process.env["GITHUB_CLIENT_SECRET"],
       executionEngineUrl: process.env["EXECUTION_ENGINE_URL"],
       collaborationWsPort: process.env["COLLABORATION_WS_PORT"],
+      livekitUrl: process.env["LIVEKIT_URL"],
+      livekitApiKey: process.env["LIVEKIT_API_KEY"],
+      livekitApiSecret: process.env["LIVEKIT_API_SECRET"],
     });
   }
   return config;

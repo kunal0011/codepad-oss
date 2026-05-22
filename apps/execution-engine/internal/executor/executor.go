@@ -46,7 +46,7 @@ func New(cfg *config.Config, gov *governor.Governor, p *container.Pool) (*Execut
 }
 
 // Execute runs code in a sandboxed container
-func (e *Executor) Execute(ctx context.Context, req types.ExecutionRequest) (*types.ExecutionResult, error) {
+func (e *Executor) Execute(ctx context.Context, req types.ExecutionRequest, callback streaming.StreamCallback) (*types.ExecutionResult, error) {
 	runtime, ok := types.Runtimes[req.Language]
 	if !ok {
 		return nil, fmt.Errorf("unsupported language: %s", req.Language)
@@ -105,6 +105,14 @@ func (e *Executor) Execute(ctx context.Context, req types.ExecutionRequest) (*ty
 			},
 		}
 
+		var binds []string
+		if req.Language == types.Rust {
+			binds = append(binds, "codepad-rust-cache:/usr/local/cargo/registry")
+			binds = append(binds, "codepad-rust-target-cache:/workspace/target")
+		} else if req.Language == types.Cpp {
+			binds = append(binds, "codepad-cpp-cache:/workspace/.cache")
+		}
+
 		hostConfig := &dockercontainer.HostConfig{
 			Resources: dockercontainer.Resources{
 				Memory:     memoryBytes,
@@ -112,11 +120,14 @@ func (e *Executor) Execute(ctx context.Context, req types.ExecutionRequest) (*ty
 				MemorySwap: memoryBytes,
 				PidsLimit:  int64Ptr(64),
 			},
-			SecurityOpt: []string{"no-new-privileges"},
-			CapDrop:     []string{"ALL"},
+			ReadonlyRootfs: true,
+			SecurityOpt:    []string{"no-new-privileges"},
+			CapDrop:        []string{"ALL"},
 			Tmpfs: map[string]string{
-				"/tmp": "rw,noexec,nosuid,size=64m",
+				"/tmp":       "rw,noexec,nosuid,size=64m",
+				"/workspace": "rw,size=64m",
 			},
+			Binds: binds,
 		}
 
 		resp, err := e.docker.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, fmt.Sprintf("codepad-exec-%s-%s", req.Language, generateRandomID(8)))
@@ -175,7 +186,7 @@ func (e *Executor) Execute(ctx context.Context, req types.ExecutionRequest) (*ty
 
 	// Setup streaming (CE-003)
 	// For now, we collect output into buffers, but we use the streamer for consistency
-	streamer := streaming.NewStreamer(streaming.DefaultConfig(), nil)
+	streamer := streaming.NewStreamer(streaming.DefaultConfig(), callback)
 	
 	outputDone := make(chan error, 1)
 	go func() {

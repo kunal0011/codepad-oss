@@ -10,6 +10,9 @@ import { api } from "@/lib/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, AlertCircle, Maximize2, Terminal as TerminalIcon, FileCode } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Panel } from "@codepad/ui";
+import { LiveKitRoom, RoomAudioRenderer } from "@livekit/components-react";
+import { LiveKitCallOverlay } from "@/components/session/LiveKitCallOverlay";
 
 // Dynamic imports for components that use browser-only APIs (xterm, monaco, y-websocket)
 const CodeEditor = dynamic(
@@ -28,7 +31,59 @@ export default function SessionPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
+  // Audio & Video Call states
+  const [isAudioEnabled, setIsAudioEnabled] = useState(false);
+  const [isVideoEnabled, setIsVideoEnabled] = useState(false);
+  const [livekitToken, setLivekitToken] = useState<string | null>(null);
+  const [livekitUrl, setLivekitUrl] = useState<string | null>(null);
+
   const { session, setSession, setParticipants, setFiles, reset } = useSessionStore();
+
+  const handleToggleAudio = async () => {
+    const nextVal = !isAudioEnabled;
+    setIsAudioEnabled(nextVal);
+    if (nextVal && !livekitToken && session) {
+      try {
+        const res = await api.getLiveKitToken(session.id);
+        if (res.success && res.data) {
+          setLivekitToken(res.data.token);
+          setLivekitUrl(res.data.url);
+        }
+      } catch (err) {
+        console.error("Failed to fetch LiveKit token:", err);
+      }
+    }
+  };
+
+  const handleToggleVideo = async () => {
+    const nextVal = !isVideoEnabled;
+    setIsVideoEnabled(nextVal);
+    if (nextVal && !livekitToken && session) {
+      try {
+        const res = await api.getLiveKitToken(session.id);
+        if (res.success && res.data) {
+          setLivekitToken(res.data.token);
+          setLivekitUrl(res.data.url);
+        }
+      } catch (err) {
+        console.error("Failed to fetch LiveKit token:", err);
+      }
+    }
+  };
+
+  const handleDisconnectCall = () => {
+    setIsAudioEnabled(false);
+    setIsVideoEnabled(false);
+    setLivekitToken(null);
+    setLivekitUrl(null);
+  };
+
+  useEffect(() => {
+    if (!isAudioEnabled && !isVideoEnabled) {
+      setLivekitToken(null);
+      setLivekitUrl(null);
+    }
+  }, [isAudioEnabled, isVideoEnabled]);
 
   useEffect(() => {
     setMounted(true);
@@ -106,7 +161,14 @@ export default function SessionPage() {
 
   return (
     <div className="flex h-screen flex-col bg-[#020617] text-slate-200 overflow-hidden font-sans">
-      <Toolbar sessionCode={session.code} language={session.language} />
+      <Toolbar
+        sessionCode={session.code}
+        language={session.language}
+        isAudioEnabled={isAudioEnabled}
+        isVideoEnabled={isVideoEnabled}
+        onToggleAudio={handleToggleAudio}
+        onToggleVideo={handleToggleVideo}
+      />
 
       <main className="flex flex-1 overflow-hidden p-4 gap-4">
         {/* Left: Sidebar */}
@@ -115,7 +177,7 @@ export default function SessionPage() {
           animate={{ x: 0, opacity: 1 }}
           className="hidden w-72 flex-col gap-4 lg:flex"
         >
-          <div className="flex-1 glass-panel rounded-2xl overflow-hidden flex flex-col">
+          <Panel className="flex-1 overflow-hidden flex flex-col">
             <div className="px-4 py-3 border-b border-white/10 bg-white/5 flex items-center justify-between">
               <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Explorer</span>
               <FileCode className="h-3.5 w-3.5 text-slate-500" />
@@ -124,15 +186,15 @@ export default function SessionPage() {
               {/* File list will go here */}
               <div className="text-[10px] text-slate-600 text-center mt-10 uppercase font-bold tracking-tighter">Workspace Files</div>
             </div>
-          </div>
+          </Panel>
           
-          <div className="h-64 glass-panel rounded-2xl overflow-hidden flex flex-col">
+          <Panel className="h-64 overflow-hidden flex flex-col">
             <div className="px-4 py-3 border-b border-white/10 bg-white/5 flex items-center justify-between">
               <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Participants</span>
               <Maximize2 className="h-3.5 w-3.5 text-slate-500" />
             </div>
             <ParticipantsSidebar />
-          </div>
+          </Panel>
         </motion.aside>
 
         {/* Right: Main Content (Editor & Terminal) */}
@@ -162,6 +224,20 @@ export default function SessionPage() {
           </motion.section>
         </div>
       </main>
+
+      {livekitToken && livekitUrl && (
+        <LiveKitRoom
+          token={livekitToken}
+          serverUrl={livekitUrl}
+          connect={true}
+          audio={isAudioEnabled}
+          video={isVideoEnabled}
+          className="hidden"
+        >
+          <RoomAudioRenderer />
+          <LiveKitCallOverlay onDisconnect={handleDisconnectCall} />
+        </LiveKitRoom>
+      )}
     </div>
   );
 }

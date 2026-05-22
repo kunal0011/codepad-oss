@@ -5,6 +5,8 @@ import { authenticate } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
 import { sessionService } from "../services/session.service.js";
 import { logger } from "../utils/logger.js";
+import { getConfig } from "../config/index.js";
+import { AccessToken } from "livekit-server-sdk";
 
 const router = Router();
 
@@ -154,6 +156,57 @@ router.patch("/:id/status", async (req, res, next) => {
     const { status } = z.object({ status: z.nativeEnum(SessionStatus) }).parse(req.body);
     await sessionService.updateStatus(req.params.id!, status, req.userPayload!.sub);
     res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:id/livekit-token", async (req, res, next) => {
+  try {
+    const sessionId = req.params.id!;
+    const userId = req.userPayload!.sub;
+    const email = req.userPayload!.email;
+
+    // Check if the user is a participant of the session
+    const participants = await sessionService.getParticipants(sessionId);
+    const participant = participants.find((p) => p.userId === userId);
+    if (!participant) {
+      return res.status(403).json({ success: false, error: "Not a participant in this session" });
+    }
+
+    const config = getConfig();
+    if (!config.livekitApiKey || !config.livekitApiSecret) {
+      logger.warn("LIVEKIT_API_KEY or LIVEKIT_API_SECRET is missing. Returning a sandbox mock token.");
+      res.json({
+        success: true,
+        data: {
+          token: "mock-livekit-token-" + sessionId + "-" + userId,
+          url: config.livekitUrl || "ws://localhost:7880",
+        },
+      });
+      return;
+    }
+
+    const at = new AccessToken(config.livekitApiKey, config.livekitApiSecret, {
+      identity: userId,
+      name: participant.name || email,
+    });
+
+    at.addGrant({
+      roomJoin: true,
+      room: sessionId,
+      canPublish: true,
+      canSubscribe: true,
+    });
+
+    const token = await at.toJwt();
+    res.json({
+      success: true,
+      data: {
+        token,
+        url: config.livekitUrl || "ws://localhost:7880",
+      },
+    });
   } catch (err) {
     next(err);
   }

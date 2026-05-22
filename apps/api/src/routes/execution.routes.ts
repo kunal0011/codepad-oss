@@ -35,6 +35,30 @@ router.post("/", validate(executeSchema), async (req, res, next) => {
   }
 });
 
+router.post("/stream", validate(executeSchema), async (req, res, next) => {
+  try {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+
+    const onChunk = (chunk: { event: string; data: any }) => {
+      res.write(`event: ${chunk.event}\ndata: ${JSON.stringify(chunk.data)}\n\n`);
+    };
+
+    await executionService.executeStream(req.userPayload!.sub, req.body, onChunk);
+    res.end();
+  } catch (err) {
+    if (res.headersSent) {
+      const message = err instanceof Error ? err.message : "Unknown execution error";
+      res.write(`event: error\ndata: ${JSON.stringify({ error: message })}\n\n`);
+      res.end();
+    } else {
+      next(err);
+    }
+  }
+});
+
 router.get("/:id", async (req, res, next) => {
   try {
     const execution = await executionService.getById(req.params.id!);

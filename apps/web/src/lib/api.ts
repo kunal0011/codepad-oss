@@ -144,6 +144,12 @@ class ApiClient {
     });
   }
 
+  async getLiveKitToken(sessionId: string) {
+    return this.request<{ token: string; url: string }>(`/api/v1/sessions/${sessionId}/livekit-token`, {
+      method: "POST",
+    });
+  }
+
   async listSessions(page = 1, pageSize = 20) {
     return this.request<Session[]>(`/api/v1/sessions?page=${page}&pageSize=${pageSize}`);
   }
@@ -174,6 +180,92 @@ class ApiClient {
       method: "POST",
       body: JSON.stringify(data),
     });
+  }
+
+  async executeCodeStream(
+    data: {
+      sessionId: string;
+      language: string;
+      files: FileEntry[];
+      stdin?: string;
+    },
+    onEvent: (event: string, parsedData: any) => void
+  ) {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    const token = this.getToken();
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_URL}/api/v1/executions/stream`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        const refreshed = await this.tryRefresh();
+        if (refreshed) {
+          headers["Authorization"] = `Bearer ${this.accessToken}`;
+          const retryResponse = await fetch(`${API_URL}/api/v1/executions/stream`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(data),
+          });
+          return this.readStream(retryResponse, onEvent);
+        }
+        this.clearToken();
+      }
+      throw new Error(`Execution returned status ${response.status}`);
+    }
+
+    return this.readStream(response, onEvent);
+  }
+
+  private async readStream(
+    response: Response,
+    onEvent: (event: string, parsedData: any) => void
+  ) {
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("Response body is not readable");
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const blocks = buffer.split("\n\n");
+      buffer = blocks.pop() ?? "";
+
+      for (const block of blocks) {
+        const lines = block.split("\n");
+        let event = "message";
+        let data = "";
+
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            event = line.slice(7).trim();
+          } else if (line.startsWith("data: ")) {
+            data = line.slice(6).trim();
+          }
+        }
+
+        if (!data) continue;
+
+        try {
+          const parsed = JSON.parse(data);
+          onEvent(event, parsed);
+        } catch (e) {
+          console.error("Failed to parse stream event", e);
+        }
+      }
+    }
   }
 
   // Assessments
